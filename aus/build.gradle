@@ -1,0 +1,55 @@
+plugins {
+    id 'com.android.library'
+    id 'kotlin-android'
+    id 'maven-publish'
+}
+
+afterEvaluate {
+    publishing {
+        publications {
+            // 创建一个名为 "release" 的发布项
+            release(MavenPublication) {
+                from components.release // 表示发布 release 版本
+                // 配置库的唯一标识，一般使用你的包名
+                groupId = 'com.gitee.allen056'
+                artifactId = 'pj-aus-android'
+                version = '1.0.0' // 库的版本号
+            }
+        }
+    }
+}
+android {
+    namespace 'com.pj.aus'
+    compileSdk 29
+
+    defaultConfig {
+        minSdk 24
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        consumerProguardFiles "consumer-rules.pro"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+    kotlinOptions {
+        jvmTarget = '1.8'
+    }
+}
+
+dependencies {
+
+    implementation libs.androidx.core.ktx
+    implementation libs.androidx.appcompat
+    implementation libs.material
+    testImplementation libs.junit
+    androidTestImplementation libs.androidx.junit
+    androidTestImplementation libs.androidx.espresso.core
+}
