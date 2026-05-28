@@ -11,8 +11,8 @@ afterEvaluate {
             release(MavenPublication) {
                 from components.release // 表示发布 release 版本
                 // 配置库的唯一标识，一般使用你的包名
-                groupId = 'com.gitee.allen056'
-                artifactId = 'pj-aus-android'
+                groupId = 'com.github.hHui056'
+                artifactId = 'PjAusAndroid'
                 version = '1.0.0' // 库的版本号
             }
         }
@@ -20,7 +20,7 @@ afterEvaluate {
 }
 android {
     namespace 'com.pj.aus'
-    compileSdk 29
+    compileSdk 34
 
     defaultConfig {
         minSdk 24
