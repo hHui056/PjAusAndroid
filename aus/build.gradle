@@ -3,27 +3,11 @@ plugins {
     id 'kotlin-android'
     id 'maven-publish'
 }
-
-afterEvaluate {
-    publishing {
-        publications {
-            // 创建一个名为 "release" 的发布项
-            release(MavenPublication) {
-                from components.release // 表示发布 release 版本
-                // 配置库的唯一标识，一般使用你的包名
-                groupId = 'com.github.hHui056'
-                artifactId = 'PjAusAndroid'
-                version = '1.0.2-alpha' // 库的版本号
-            }
-        }
-    }
-}
 android {
-    namespace 'com.pj.aus'
-    compileSdk 34
+    compileSdkVersion 34
 
     defaultConfig {
-        minSdk 24
+        minSdkVersion 24
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles "consumer-rules.pro"
