@@ -10,6 +10,8 @@ import com.pj.aus.entity.VersionInfo
 import com.pj.aus.listener.UpdateListener
 
 class MainActivity : AppCompatActivity() {
+    private val tag = this.javaClass.simpleName
+
     @SuppressLint("MissingInflatedId")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -19,8 +21,9 @@ class MainActivity : AppCompatActivity() {
             val updateManager = UpdateManager.init(applicationContext)
             updateManager.setCheckUrl("http://192.168.0.31:8754")
             updateManager.setPackageName("fais6")
-            updateManager.checkUpdate(this,object :UpdateListener{
+            updateManager.checkUpdate(this, object : UpdateListener {
                 override fun onNewVersionFound(updateInfo: VersionInfo) {
+                    Log.d(tag,"检测到新版本 ${updateInfo}")
                 }
 
                 override fun onAlreadyLatestVersion() {
@@ -30,7 +33,7 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 override fun onDownloadProgress(percent: Int, downloaded: Long, total: Long) {
-                    Log.d("MainActivity","文件下载中，进度: ${percent}")
+                    Log.d("MainActivity", "文件下载中，进度: ${percent}")
                 }
 
                 override fun onDownloadComplete() {

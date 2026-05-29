@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- 对应 getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) 返回的路径 -->
+    <!-- 实际路径为 /Android/data/<package_name>/files/Download/ -->
+    <external-files-path
+        name="downloads"
+        path="Download/" />
+</paths>

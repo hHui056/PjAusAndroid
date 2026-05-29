@@ -1,5 +1,7 @@
 package com.pj.aus.entity
 
+import com.alibaba.fastjson.JSON
+
 /**
  * Create By hHui on 2026/5/29 11:27
  *
@@ -13,7 +15,7 @@ class VersionInfo {
     var downloadUrl: String? = null
 
     /** 完整的安装包下载地址 **/
-    var ApkUrl: String? = null
+    var ApkUrl = ""
 
     /** 版本号 **/
     var versionCode: Int = -1
@@ -32,4 +34,13 @@ class VersionInfo {
      * 4-表示一切正常，可以使用下载地址下载差分包
      */
     var code = -1
+
+    /**
+     * APK文件md5值
+     */
+    var Md5Hash = ""
+
+    override fun toString(): String {
+        return JSON.toJSONString(this)
+    }
 }
