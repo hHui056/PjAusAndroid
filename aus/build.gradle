@@ -13,7 +13,7 @@ afterEvaluate {
                 // 配置库的唯一标识，一般使用你的包名
                 groupId = 'com.github.hHui056'
                 artifactId = 'PjAusAndroid'
-                version = '1.0.0' // 库的版本号
+                version = '1.0.1' // 库的版本号
             }
         }
     }
