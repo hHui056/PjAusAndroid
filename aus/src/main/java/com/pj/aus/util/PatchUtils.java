@@ -25,7 +25,7 @@ public class PatchUtils {
      *
      * @param oldApkPath 示例:/sdcard/old.apk
      * @param newApkPath 示例:/sdcard/new.apk
-     * @param patchPath  示例:/sdcard/xx.patch
+     * @param patchPath  示例:/sdcard/xx.ach
      * @return
      */
     public native int patch(String oldApkPath, String newApkPath, String patchPath);

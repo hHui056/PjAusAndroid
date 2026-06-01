@@ -16,14 +16,14 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
-
         findViewById<Button>(R.id.btn_check_update).setOnClickListener {
             val updateManager = UpdateManager.init(applicationContext)
             updateManager.setCheckUrl("http://192.168.0.31:8754")
             updateManager.setPackageName("fais6")
+            updateManager.setFileProviderAuthority("${this.packageName}.fileprovider")
             updateManager.checkUpdate(this, object : UpdateListener {
                 override fun onNewVersionFound(updateInfo: VersionInfo) {
-                    Log.d(tag,"检测到新版本 ${updateInfo}")
+                    Log.d(tag, "检测到新版本 ${updateInfo}")
                 }
 
                 override fun onAlreadyLatestVersion() {
