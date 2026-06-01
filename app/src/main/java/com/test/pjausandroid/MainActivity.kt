@@ -17,6 +17,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        Toast.makeText(this, "这是新的apk", Toast.LENGTH_LONG).show()
         findViewById<Button>(R.id.btn_check_update).setOnClickListener {
             val updateManager = UpdateManager.init(applicationContext)
             updateManager.setCheckUrl("http://192.168.0.31:8754")
