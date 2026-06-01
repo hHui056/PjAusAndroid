@@ -15,7 +15,7 @@ class VersionInfo {
     var downloadUrl: String? = null
 
     /** 完整的安装包下载地址 **/
-    var ApkUrl = ""
+    var ApkUrl: String? = null
 
     /** 版本号 **/
     var versionCode: Int = -1
@@ -38,7 +38,7 @@ class VersionInfo {
     /**
      * APK文件md5值
      */
-    var Md5Hash = ""
+    var Md5Hash: String? = null
 
     override fun toString(): String {
         return JSON.toJSONString(this)

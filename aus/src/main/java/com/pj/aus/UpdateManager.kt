@@ -14,6 +14,7 @@ import android.util.Log
 import android.view.LayoutInflater
 import android.widget.ProgressBar
 import android.widget.TextView
+import android.widget.Toast
 import androidx.core.content.FileProvider
 import androidx.fragment.app.FragmentActivity
 import com.alibaba.fastjson.JSON
@@ -35,7 +36,7 @@ import kotlin.coroutines.resume
 /**
  * Create By hHui on 2026/5/29 14:24
  *
- * @description 应用更新管理器（支持断点续传 + 差分包更新 + 详细日志）
+ * @description 应用更新管理器
  */
 class UpdateManager private constructor(private val context: Context) {
     companion object {
@@ -55,10 +56,7 @@ class UpdateManager private constructor(private val context: Context) {
         var isDebug = true
     }
 
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-        .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-        .build()
+    private val client = OkHttpClient.Builder().connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS).readTimeout(15, java.util.concurrent.TimeUnit.SECONDS).build()
     private val updateScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var currentListener: UpdateListener? = null
     private var fileProviderAuthority: String = ""
@@ -145,6 +143,20 @@ class UpdateManager private constructor(private val context: Context) {
                 return@launch
             }
             logD("获取更新信息成功: versionCode=${updateInfo.versionCode}, code=${updateInfo.code}, mustUpdate=${updateInfo.mustUpdate}, ApkUrl=${updateInfo.ApkUrl}, downloadUrl=${updateInfo.downloadUrl}")
+            if (updateInfo.code == 1) {
+                if (showDefaultProgressUI) {
+                    Toast.makeText(context, "已是最新版本", Toast.LENGTH_SHORT).show()
+                }
+                listener.onAlreadyLatestVersion()
+                return@launch
+            }
+            if (updateInfo.code == 3) {
+                if (showDefaultProgressUI) {
+                    Toast.makeText(context, "正在生成升级文件,请稍后再试", Toast.LENGTH_SHORT).show()
+                }
+                return@launch
+            }
+
             val localVersionCode = getLocalVersionCode()
             logD("本地版本号: $localVersionCode, 服务器版本号: ${updateInfo.versionCode}")
             if (updateInfo.versionCode > localVersionCode) {
@@ -152,42 +164,38 @@ class UpdateManager private constructor(private val context: Context) {
                 if (showDefaultProgressUI) {
                     val supportPatch = (updateInfo.code == 4 && !updateInfo.downloadUrl.isNullOrEmpty())
                     logD("是否支持增量更新: $supportPatch")
-                    AlertDialog.Builder(activity)
-                        .setTitle("发现新版本 v${updateInfo.versionCode}")
-                        .setMessage(updateInfo.changeLog)
-                        .apply {
-                            if (supportPatch) {
-                                setPositiveButton("增量更新") { _, _ ->
-                                    startDownloadPatch(activity, updateInfo)
-                                }
-                                setNegativeButton("全量更新") { _, _ ->
-                                    logD("用户点击全量更新按钮")
-                                    if (updateInfo.ApkUrl.isNotEmpty()) {
-                                        startDownloadFullApk(activity, updateInfo)
-                                    } else {
-                                        logE("全量包地址无效")
-                                        currentListener?.onDownloadFailed("全量包地址无效")
-                                    }
-                                }
-                                if (!updateInfo.mustUpdate) {
-                                    setNeutralButton("稍后", null)
-                                }
-                            } else {
-                                setPositiveButton("立即更新") { _, _ ->
-                                    logD("用户点击立即更新（全量）")
-                                    if (updateInfo.ApkUrl.isNotEmpty()) {
-                                        startDownloadFullApk(activity, updateInfo)
-                                    } else {
-                                        logE("全量包地址无效")
-                                        currentListener?.onDownloadFailed("全量包地址无效")
-                                    }
-                                }
-                                if (!updateInfo.mustUpdate) {
-                                    setNegativeButton("稍后", null)
+                    AlertDialog.Builder(activity).setTitle("发现新版本 v${updateInfo.versionCode}").setMessage(updateInfo.changeLog).apply {
+                        if (supportPatch) {
+                            setPositiveButton("增量更新") { _, _ ->
+                                startDownloadPatch(activity, updateInfo)
+                            }
+                            setNegativeButton("全量更新") { _, _ ->
+                                logD("用户点击全量更新按钮")
+                                if (updateInfo.ApkUrl!!.isNotEmpty()) {
+                                    startDownloadFullApk(activity, updateInfo)
+                                } else {
+                                    logE("全量包地址无效")
+                                    currentListener?.onDownloadFailed("全量包地址无效")
                                 }
                             }
+                            if (!updateInfo.mustUpdate) {
+                                setNeutralButton("稍后", null)
+                            }
+                        } else {
+                            setPositiveButton("立即更新") { _, _ ->
+                                logD("用户点击立即更新（全量）")
+                                if (updateInfo.ApkUrl!!.isNotEmpty()) {
+                                    startDownloadFullApk(activity, updateInfo)
+                                } else {
+                                    logE("全量包地址无效")
+                                    currentListener?.onDownloadFailed("全量包地址无效")
+                                }
+                            }
+                            if (!updateInfo.mustUpdate) {
+                                setNegativeButton("稍后", null)
+                            }
                         }
-                        .show()
+                    }.show()
                 }
             } else {
                 logD("当前已是最新版本")
@@ -262,7 +270,7 @@ class UpdateManager private constructor(private val context: Context) {
         }
 
         val tempFile = getTempApkFile(versionCode)
-        val info = readDownloadInfo(versionCode, versionInfo.ApkUrl)
+        val info = readDownloadInfo(versionCode, versionInfo.ApkUrl!!)
 
         var startOffset = 0L
         var totalSize = -1L
@@ -281,19 +289,14 @@ class UpdateManager private constructor(private val context: Context) {
         downloadProgressBar = dialogView.findViewById(R.id.downloadProgressBar)
         downloadPercentText = dialogView.findViewById(R.id.tvDownloadPercent)
 
-        progressDialog = AlertDialog.Builder(activity)
-            .setTitle("正在下载更新")
-            .setView(dialogView)
-            .setCancelable(false)
-            .setNegativeButton("取消") { dialog, _ ->
-                logD("用户取消下载")
+        progressDialog = AlertDialog.Builder(activity).setTitle("正在下载更新").setView(dialogView).setCancelable(false).setNegativeButton("取消") { dialog, _ ->
+            logD("用户取消下载")
 
-                currentDownloadJob?.cancel()
-                cleanPartialDownload(versionCode)
-                dialog.dismiss()
-                currentListener?.onDownloadFailed("用户取消下载")
-            }
-            .show()
+            currentDownloadJob?.cancel()
+            cleanPartialDownload(versionCode)
+            dialog.dismiss()
+            currentListener?.onDownloadFailed("用户取消下载")
+        }.show()
 
         if (startOffset > 0 && totalSize > 0) {
             val percent = (startOffset * 100 / totalSize).toInt()
@@ -304,25 +307,19 @@ class UpdateManager private constructor(private val context: Context) {
 
         currentDownloadJob = updateScope.launch {
             val downloader = ApkDownloader(context)
-            val result = downloader.downloadFile(
-                downloadUrl = versionInfo.ApkUrl,
-                targetFile = tempFile,
-                startOffset = startOffset,
-                expectedTotalSize = if (totalSize > 0) totalSize else null,
-                onProgress = { downloaded, total, done ->
-                    if (done) {
-                        logD("全量包下载完成: $downloaded / $total")
-                        progressDialog?.dismiss()
-                        currentListener?.onDownloadComplete()
-                    } else {
-                        val percent = if (total > 0) (downloaded * 100 / total).toInt() else 0
-                        downloadProgressBar?.progress = percent
-                        downloadPercentText?.text = "$percent% (${formatSize(downloaded)}/${formatSize(total)})"
-                        currentListener?.onDownloadProgress(percent, downloaded, total)
-                        saveDownloadInfo(versionCode, versionInfo.ApkUrl, total, downloaded)
-                    }
+            val result = downloader.downloadFile(downloadUrl = versionInfo.ApkUrl!!, targetFile = tempFile, startOffset = startOffset, expectedTotalSize = if (totalSize > 0) totalSize else null, onProgress = { downloaded, total, done ->
+                if (done) {
+                    logD("全量包下载完成: $downloaded / $total")
+                    progressDialog?.dismiss()
+                    currentListener?.onDownloadComplete()
+                } else {
+                    val percent = if (total > 0) (downloaded * 100 / total).toInt() else 0
+                    downloadProgressBar?.progress = percent
+                    downloadPercentText?.text = "$percent% (${formatSize(downloaded)}/${formatSize(total)})"
+                    currentListener?.onDownloadProgress(percent, downloaded, total)
+                    saveDownloadInfo(versionCode, versionInfo.ApkUrl!!, total, downloaded)
                 }
-            )
+            })
 
             if (result != null) {
                 logD("全量包下载成功，开始MD5校验")
@@ -396,18 +393,13 @@ class UpdateManager private constructor(private val context: Context) {
         downloadProgressBar = dialogView.findViewById(R.id.downloadProgressBar)
         downloadPercentText = dialogView.findViewById(R.id.tvDownloadPercent)
 
-        progressDialog = AlertDialog.Builder(activity)
-            .setTitle("正在下载增量更新包")
-            .setView(dialogView)
-            .setCancelable(false)
-            .setNegativeButton("取消") { dialog, _ ->
-                logD("用户取消差分包下载")
-                currentDownloadJob?.cancel()
-                cleanPatchDownload(versionCode)
-                dialog.dismiss()
-                currentListener?.onDownloadFailed("用户取消下载")
-            }
-            .show()
+        progressDialog = AlertDialog.Builder(activity).setTitle("正在下载增量更新包").setView(dialogView).setCancelable(false).setNegativeButton("取消") { dialog, _ ->
+            logD("用户取消差分包下载")
+            currentDownloadJob?.cancel()
+            cleanPatchDownload(versionCode)
+            dialog.dismiss()
+            currentListener?.onDownloadFailed("用户取消下载")
+        }.show()
 
         if (startOffset > 0 && totalSize > 0) {
             val percent = (startOffset * 100 / totalSize).toInt()
@@ -418,25 +410,19 @@ class UpdateManager private constructor(private val context: Context) {
 
         currentDownloadJob = updateScope.launch {
             val downloader = ApkDownloader(context)
-            val downloadedPatchFile = downloader.downloadFile(
-                downloadUrl = patchUrl,
-                targetFile = patchFile,
-                startOffset = startOffset,
-                expectedTotalSize = if (totalSize > 0) totalSize else null,
-                onProgress = { downloaded, total, done ->
-                    if (done) {
-                        downloadPercentText?.text = "正在合成 APK..."
-                        downloadProgressBar?.isIndeterminate = true
-                        currentListener?.onDownloadProgress(100, downloaded, total)
-                    } else {
-                        val percent = if (total > 0) (downloaded * 100 / total).toInt() else 0
-                        downloadProgressBar?.progress = percent
-                        downloadPercentText?.text = "$percent% (${formatSize(downloaded)}/${formatSize(total)})"
-                        currentListener?.onDownloadProgress(percent, downloaded, total)
-                        saveDownloadInfo(versionCode, patchUrl, total, downloaded, patchInfoFile)
-                    }
+            val downloadedPatchFile = downloader.downloadFile(downloadUrl = patchUrl, targetFile = patchFile, startOffset = startOffset, expectedTotalSize = if (totalSize > 0) totalSize else null, onProgress = { downloaded, total, done ->
+                if (done) {
+                    downloadPercentText?.text = "正在合成 APK..."
+                    downloadProgressBar?.isIndeterminate = true
+                    currentListener?.onDownloadProgress(100, downloaded, total)
+                } else {
+                    val percent = if (total > 0) (downloaded * 100 / total).toInt() else 0
+                    downloadProgressBar?.progress = percent
+                    downloadPercentText?.text = "$percent% (${formatSize(downloaded)}/${formatSize(total)})"
+                    currentListener?.onDownloadProgress(percent, downloaded, total)
+                    saveDownloadInfo(versionCode, patchUrl, total, downloaded, patchInfoFile)
                 }
-            )
+            })
 
             if (downloadedPatchFile == null) {
                 logE("差分包下载失败，回退全量更新")
@@ -446,7 +432,6 @@ class UpdateManager private constructor(private val context: Context) {
                 startDownloadFullApk(activity, versionInfo)
                 return@launch
             }
-
             val oldApkPath = getInstalledApkPath()
             if (oldApkPath == null || !File(oldApkPath).exists()) {
                 logE("无法获取当前安装包路径: $oldApkPath")
@@ -548,10 +533,7 @@ class UpdateManager private constructor(private val context: Context) {
 
     private fun saveDownloadInfo(versionCode: Int, url: String, totalSize: Long, downloadedSize: Long, infoFile: File = getInfoFile(versionCode)) {
         val info = mapOf(
-            "url" to url,
-            "totalSize" to totalSize,
-            "downloadedSize" to downloadedSize,
-            "versionCode" to versionCode
+            "url" to url, "totalSize" to totalSize, "downloadedSize" to downloadedSize, "versionCode" to versionCode
         )
         infoFile.writeText(JSON.toJSONString(info))
     }
@@ -581,28 +563,22 @@ class UpdateManager private constructor(private val context: Context) {
 
     private inner class ApkDownloader(private val context: Context) {
         suspend fun downloadFile(
-            downloadUrl: String,
-            targetFile: File,
-            startOffset: Long,
-            expectedTotalSize: Long?,
-            onProgress: (downloaded: Long, total: Long, done: Boolean) -> Unit
+            downloadUrl: String, targetFile: File, startOffset: Long, expectedTotalSize: Long?, onProgress: (downloaded: Long, total: Long, done: Boolean) -> Unit
         ): File? = suspendCancellableCoroutine { continuation ->
             targetFile.parentFile?.mkdirs()
             logD("开始下载: url=$downloadUrl, 目标文件=${targetFile.absolutePath}, startOffset=$startOffset, expectedTotalSize=$expectedTotalSize")
             val requestBuilder = Request.Builder().url(downloadUrl)
             if (startOffset > 0 && expectedTotalSize != null) {
-                val rangeHeader = "$startOffset-${expectedTotalSize - 1}"
+                val rangeHeader = "bytes=$startOffset-${expectedTotalSize - 1}"
                 requestBuilder.addHeader("Range", rangeHeader)
                 logD("添加Range头: $rangeHeader")
             }
             val request = requestBuilder.build()
             val call = client.newCall(request)
-
             continuation.invokeOnCancellation {
                 logD("下载任务被取消")
                 call.cancel()
             }
-
             val mainHandler = Handler(Looper.getMainLooper())
             call.enqueue(object : okhttp3.Callback {
                 override fun onFailure(call: Call, e: IOException) {
@@ -629,7 +605,6 @@ class UpdateManager private constructor(private val context: Context) {
                         if (!continuation.isCancelled) continuation.resume(null)
                         return
                     }
-
                     var totalSize = expectedTotalSize ?: -1L
                     val contentRange = response.header("Content-Range")
                     if (contentRange != null) {
@@ -755,11 +730,7 @@ class UpdateManager private constructor(private val context: Context) {
     }
 
     private fun showMd5MismatchDialog(activity: FragmentActivity) {
-        AlertDialog.Builder(activity)
-            .setTitle("文件校验失败")
-            .setMessage("下载的安装包校验不通过，可能文件已损坏，请重新下载。")
-            .setPositiveButton("确定", null)
-            .show()
+        AlertDialog.Builder(activity).setTitle("文件校验失败").setMessage("下载的安装包校验不通过，可能文件已损坏，请重新下载。").setPositiveButton("确定", null).show()
     }
 
     fun release() {

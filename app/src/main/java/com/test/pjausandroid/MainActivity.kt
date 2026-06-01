@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.os.Bundle
 import android.util.Log
 import android.widget.Button
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.pj.aus.UpdateManager
 import com.pj.aus.entity.VersionInfo
@@ -19,7 +20,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btn_check_update).setOnClickListener {
             val updateManager = UpdateManager.init(applicationContext)
             updateManager.setCheckUrl("http://192.168.0.31:8754")
-            updateManager.setPackageName("fais6")
+            updateManager.setPackageName("fais6_update_test")
             updateManager.setFileProviderAuthority("${this.packageName}.fileprovider")
             updateManager.checkUpdate(this, object : UpdateListener {
                 override fun onNewVersionFound(updateInfo: VersionInfo) {
