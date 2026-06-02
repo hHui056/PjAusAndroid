@@ -57,7 +57,7 @@ class UpdateManager private constructor(private val context: Context) {
     }
 
     private val client = OkHttpClient.Builder().connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS).readTimeout(15, java.util.concurrent.TimeUnit.SECONDS).build()
-    private val updateScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    private var updateScope: CoroutineScope? = null
     private var currentListener: UpdateListener? = null
     private var fileProviderAuthority: String = ""
     private var checkUrl: String = ""
@@ -135,7 +135,8 @@ class UpdateManager private constructor(private val context: Context) {
             listener?.onCheckFailed("检查更新地址未设置，请调用 setCheckUrl()")
             return
         }
-        updateScope.launch {
+        if (updateScope == null) updateScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+        updateScope?.launch {
             val updateInfo = fetchUpdateInfo(extParams)
             if (updateInfo == null) {
                 logE("获取更新信息失败")
@@ -304,7 +305,7 @@ class UpdateManager private constructor(private val context: Context) {
             currentListener?.onDownloadProgress(percent, startOffset, totalSize)
         }
 
-        currentDownloadJob = updateScope.launch {
+        currentDownloadJob = updateScope?.launch {
             val downloader = ApkDownloader(context)
             val result = downloader.downloadFile(downloadUrl = versionInfo.ApkUrl!!, targetFile = tempFile, startOffset = startOffset, expectedTotalSize = if (totalSize > 0) totalSize else null, onProgress = { downloaded, total, done ->
                 if (done) {
@@ -407,7 +408,7 @@ class UpdateManager private constructor(private val context: Context) {
             currentListener?.onDownloadProgress(percent, startOffset, totalSize)
         }
 
-        currentDownloadJob = updateScope.launch {
+        currentDownloadJob = updateScope?.launch {
             val downloader = ApkDownloader(context)
             val downloadedPatchFile = downloader.downloadFile(downloadUrl = patchUrl, targetFile = patchFile, startOffset = startOffset, expectedTotalSize = if (totalSize > 0) totalSize else null, onProgress = { downloaded, total, done ->
                 if (done) {
@@ -735,8 +736,9 @@ class UpdateManager private constructor(private val context: Context) {
     fun release() {
         logD("释放资源，取消下载任务")
         currentDownloadJob?.cancel()
-        updateScope.cancel()
+        updateScope?.cancel()
         progressDialog?.dismiss()
         currentListener = null
+        updateScope = null
     }
 }
