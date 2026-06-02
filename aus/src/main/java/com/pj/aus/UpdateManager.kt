@@ -291,7 +291,6 @@ class UpdateManager private constructor(private val context: Context) {
 
         progressDialog = AlertDialog.Builder(activity).setTitle("正在下载更新").setView(dialogView).setCancelable(false).setNegativeButton("取消") { dialog, _ ->
             logD("用户取消下载")
-
             currentDownloadJob?.cancel()
             cleanPartialDownload(versionCode)
             dialog.dismiss()
