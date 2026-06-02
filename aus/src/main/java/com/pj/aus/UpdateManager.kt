@@ -122,24 +122,24 @@ class UpdateManager private constructor(private val context: Context) {
      * @param listener 回调监听
      * @param showDefaultProgressUI 是否使用库内置的下载进度对话框（默认true）
      */
-    fun checkUpdate(activity: FragmentActivity, listener: UpdateListener, showDefaultProgressUI: Boolean = true) {
+    fun checkUpdate(activity: FragmentActivity, listener: UpdateListener?, showDefaultProgressUI: Boolean = true) {
         this.currentListener = listener
         logD("checkUpdate called, packageName=$packageName, checkUrl=$checkUrl")
         if (this.packageName.isEmpty()) {
             logE("未设置升级包名")
-            listener.onCheckFailed("未设置升级包名 请调用 setPackageName()")
+            listener?.onCheckFailed("未设置升级包名 请调用 setPackageName()")
             return
         }
         if (checkUrl.isEmpty()) {
             logE("检查更新地址未设置")
-            listener.onCheckFailed("检查更新地址未设置，请调用 setCheckUrl()")
+            listener?.onCheckFailed("检查更新地址未设置，请调用 setCheckUrl()")
             return
         }
         updateScope.launch {
             val updateInfo = fetchUpdateInfo(extParams)
             if (updateInfo == null) {
                 logE("获取更新信息失败")
-                listener.onCheckFailed("获取更新信息失败，请检查网络或服务器返回格式")
+                listener?.onCheckFailed("获取更新信息失败，请检查网络或服务器返回格式")
                 return@launch
             }
             logD("获取更新信息成功: versionCode=${updateInfo.versionCode}, code=${updateInfo.code}, mustUpdate=${updateInfo.mustUpdate}, ApkUrl=${updateInfo.ApkUrl}, downloadUrl=${updateInfo.downloadUrl}")
@@ -147,7 +147,7 @@ class UpdateManager private constructor(private val context: Context) {
                 if (showDefaultProgressUI) {
                     Toast.makeText(context, "已是最新版本", Toast.LENGTH_SHORT).show()
                 }
-                listener.onAlreadyLatestVersion()
+                listener?.onAlreadyLatestVersion()
                 return@launch
             }
             if (updateInfo.code == 3) {
@@ -160,7 +160,7 @@ class UpdateManager private constructor(private val context: Context) {
             val localVersionCode = getLocalVersionCode()
             logD("本地版本号: $localVersionCode, 服务器版本号: ${updateInfo.versionCode}")
             if (updateInfo.versionCode > localVersionCode) {
-                listener.onNewVersionFound(updateInfo)
+                listener?.onNewVersionFound(updateInfo)
                 if (showDefaultProgressUI) {
                     val supportPatch = (updateInfo.code == 4 && !updateInfo.downloadUrl.isNullOrEmpty())
                     logD("是否支持增量更新: $supportPatch")
@@ -199,7 +199,7 @@ class UpdateManager private constructor(private val context: Context) {
                 }
             } else {
                 logD("当前已是最新版本")
-                listener.onAlreadyLatestVersion()
+                listener?.onAlreadyLatestVersion()
             }
         }
     }
