@@ -66,9 +66,3 @@ val updateManager = UpdateManager.init(applicationContext)
             })
 ```
 
-## 版本记录
-
-### 1.0.4
-
-- add setLogImplementation接口传入log的实现
-- add 对SSL请求的支持
