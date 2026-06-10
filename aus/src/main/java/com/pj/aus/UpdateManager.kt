@@ -20,6 +20,7 @@ import androidx.fragment.app.FragmentActivity
 import com.alibaba.fastjson.JSON
 import com.pj.aus.entity.VersionInfo
 import com.pj.aus.listener.UpdateListener
+import com.pj.aus.log.IUpdateLog
 import com.pj.aus.util.InstallPermissionHelper
 import com.pj.aus.util.Md5Util
 import com.pj.aus.util.PatchUtils
@@ -63,6 +64,7 @@ class UpdateManager private constructor(private val context: Context) {
     private var checkUrl: String = ""
     private var packageName: String = ""
     private var extParams: Map<String, String>? = null
+    private var logger: IUpdateLog? = null
 
     // 进度对话框相关（内置默认UI）
     private var progressDialog: AlertDialog? = null
@@ -71,22 +73,12 @@ class UpdateManager private constructor(private val context: Context) {
     private var pendingApkFile: File? = null
     private var currentDownloadJob: Job? = null
 
-    private fun logD(msg: String) {
-        if (isDebug) Log.d(TAG, msg)
-    }
-
-    private fun logE(msg: String, tr: Throwable? = null) {
-        if (isDebug) {
-            if (tr != null) Log.e(TAG, msg, tr) else Log.e(TAG, msg)
-        }
-    }
-
     /**
      * 设置服务器检查更新地址
      */
     fun setCheckUrl(url: String): UpdateManager {
         this.checkUrl = url
-        logD("setCheckUrl: $url")
+        logger?.i(TAG, "setCheckUrl: $url")
         return this
     }
 
@@ -95,7 +87,7 @@ class UpdateManager private constructor(private val context: Context) {
      */
     fun setPackageName(name: String): UpdateManager {
         this.packageName = name
-        logD("setPackageName: $name")
+        logger?.i(TAG, "setPackageName: $name")
         return this
     }
 
@@ -104,7 +96,7 @@ class UpdateManager private constructor(private val context: Context) {
      */
     fun setFileProviderAuthority(authority: String): UpdateManager {
         this.fileProviderAuthority = authority
-        logD("setFileProviderAuthority: $authority")
+        logger?.i(TAG, "setFileProviderAuthority: $authority")
         return this
     }
 
@@ -113,7 +105,15 @@ class UpdateManager private constructor(private val context: Context) {
      */
     fun setExtParams(params: Map<String, String>): UpdateManager {
         this.extParams = params
-        logD("setExtParams: $params")
+        logger?.i(TAG, "setExtParams: $params")
+        return this
+    }
+
+    /**
+     * 设置日志
+     */
+    fun setLogImplementation(log: IUpdateLog): UpdateManager {
+        this.logger = log
         return this
     }
 
@@ -124,14 +124,14 @@ class UpdateManager private constructor(private val context: Context) {
      */
     fun checkUpdate(activity: FragmentActivity, listener: UpdateListener?, showDefaultProgressUI: Boolean = true) {
         this.currentListener = listener
-        logD("checkUpdate called, packageName=$packageName, checkUrl=$checkUrl")
+        logger?.i(TAG, "checkUpdate called, packageName=$packageName, checkUrl=$checkUrl")
         if (this.packageName.isEmpty()) {
-            logE("未设置升级包名")
+            logger?.e(TAG, "未设置升级包名")
             listener?.onCheckFailed("未设置升级包名 请调用 setPackageName()")
             return
         }
         if (checkUrl.isEmpty()) {
-            logE("检查更新地址未设置")
+            logger?.e(TAG, "检查更新地址未设置")
             listener?.onCheckFailed("检查更新地址未设置，请调用 setCheckUrl()")
             return
         }
@@ -139,11 +139,11 @@ class UpdateManager private constructor(private val context: Context) {
         updateScope?.launch {
             val updateInfo = fetchUpdateInfo(extParams)
             if (updateInfo == null) {
-                logE("获取更新信息失败")
+                logger?.e(TAG, "获取更新信息失败")
                 listener?.onCheckFailed("获取更新信息失败，请检查网络或服务器返回格式")
                 return@launch
             }
-            logD("获取更新信息成功: versionCode=${updateInfo.versionCode}, code=${updateInfo.code}, mustUpdate=${updateInfo.mustUpdate}, ApkUrl=${updateInfo.ApkUrl}, downloadUrl=${updateInfo.downloadUrl}")
+            logger?.i(TAG, "获取更新信息成功: versionCode=${updateInfo.versionCode}, code=${updateInfo.code}, mustUpdate=${updateInfo.mustUpdate}, ApkUrl=${updateInfo.ApkUrl}, downloadUrl=${updateInfo.downloadUrl}")
             if (updateInfo.code == 1) {
                 if (showDefaultProgressUI) {
                     Toast.makeText(context, "已是最新版本", Toast.LENGTH_SHORT).show()
@@ -159,23 +159,23 @@ class UpdateManager private constructor(private val context: Context) {
             }
 
             val localVersionCode = getLocalVersionCode()
-            logD("本地版本号: $localVersionCode, 服务器版本号: ${updateInfo.versionCode}")
+            logger?.i(TAG, "本地版本号: $localVersionCode, 服务器版本号: ${updateInfo.versionCode}")
             if (updateInfo.versionCode > localVersionCode) {
                 listener?.onNewVersionFound(updateInfo)
                 if (showDefaultProgressUI) {
                     val supportPatch = (updateInfo.code == 4 && !updateInfo.downloadUrl.isNullOrEmpty())
-                    logD("是否支持增量更新: $supportPatch")
+                    logger?.i(TAG, "是否支持增量更新: $supportPatch")
                     AlertDialog.Builder(activity).setTitle("发现新版本 v${updateInfo.versionCode}").setMessage(updateInfo.changeLog).apply {
                         if (supportPatch) {
                             setPositiveButton("增量更新") { _, _ ->
                                 startDownloadPatch(activity, updateInfo)
                             }
                             setNegativeButton("全量更新") { _, _ ->
-                                logD("用户点击全量更新按钮")
+                                logger?.i(TAG, "用户点击全量更新按钮")
                                 if (updateInfo.ApkUrl!!.isNotEmpty()) {
                                     startDownloadFullApk(activity, updateInfo)
                                 } else {
-                                    logE("全量包地址无效")
+                                    logger?.e(TAG, "全量包地址无效")
                                     currentListener?.onDownloadFailed("全量包地址无效")
                                 }
                             }
@@ -184,11 +184,11 @@ class UpdateManager private constructor(private val context: Context) {
                             }
                         } else {
                             setPositiveButton("立即更新") { _, _ ->
-                                logD("用户点击立即更新（全量）")
+                                logger?.i(TAG, "用户点击立即更新（全量）")
                                 if (updateInfo.ApkUrl!!.isNotEmpty()) {
                                     startDownloadFullApk(activity, updateInfo)
                                 } else {
-                                    logE("全量包地址无效")
+                                    logger?.e(TAG, "全量包地址无效")
                                     currentListener?.onDownloadFailed("全量包地址无效")
                                 }
                             }
@@ -199,7 +199,7 @@ class UpdateManager private constructor(private val context: Context) {
                     }.show()
                 }
             } else {
-                logD("当前已是最新版本")
+                logger?.i(TAG, "当前已是最新版本")
                 listener?.onAlreadyLatestVersion()
             }
         }
@@ -215,23 +215,23 @@ class UpdateManager private constructor(private val context: Context) {
             }
             realRequestUrl = sb.toString().replaceFirst("&", "")
         }
-        logD("请求URL: $realRequestUrl")
+        logger?.i(TAG, "请求URL: $realRequestUrl")
         val request = Request.Builder().url(realRequestUrl).get().build()
         try {
             val response = client.newCall(request).execute()
             if (!response.isSuccessful) {
-                logE("请求失败: code=${response.code}")
+                logger?.e(TAG, "请求失败: code=${response.code}")
                 return@withContext null
             }
             val json = response.body?.string()
-            logD("服务器返回JSON: $json")
+            logger?.i(TAG, "服务器返回JSON: $json")
             if (json.isNullOrEmpty()) {
-                logE("返回JSON为空")
+                logger?.e(TAG, "返回JSON为空")
                 return@withContext null
             }
             JSON.parseObject(json, VersionInfo::class.java)
         } catch (e: Exception) {
-            logE("解析更新信息异常", e)
+            logger?.e(TAG, "解析更新信息异常 ${e.message}")
             null
         }
     }
@@ -244,10 +244,10 @@ class UpdateManager private constructor(private val context: Context) {
             } else {
                 packageInfo.versionCode
             }
-            logD("本地版本号: $version")
+            logger?.i(TAG, "本地版本号: $version")
             version
         } catch (e: PackageManager.NameNotFoundException) {
-            logE("获取本地版本号失败", e)
+            logger?.e(TAG, "获取本地版本号失败 ${e.message}")
             1
         }
     }
@@ -256,16 +256,16 @@ class UpdateManager private constructor(private val context: Context) {
 
     private fun startDownloadFullApk(activity: FragmentActivity, versionInfo: VersionInfo) {
         val versionCode = versionInfo.versionCode
-        logD("开始全量下载, 版本号=$versionCode, url=${versionInfo.ApkUrl}")
+        logger?.i(TAG, "开始全量下载, 版本号=$versionCode, url=${versionInfo.ApkUrl}")
         val apkFile = getApkFile(versionCode)
         if (apkFile.exists() && apkFile.length() > 0) {
-            logD("APK文件已存在，验证MD5: ${apkFile.absolutePath}")
+            logger?.i(TAG, "APK文件已存在，验证MD5: ${apkFile.absolutePath}")
             if (Md5Util.verifyMd5(apkFile, versionInfo.Md5Hash)) {
-                logD("MD5校验通过，直接安装")
+                logger?.i(TAG, "MD5校验通过，直接安装")
                 installApkWithPermissionCheck(activity, apkFile)
                 return
             } else {
-                logD("MD5校验失败，删除旧文件")
+                logger?.i(TAG, "MD5校验失败，删除旧文件")
                 apkFile.delete()
             }
         }
@@ -279,11 +279,11 @@ class UpdateManager private constructor(private val context: Context) {
         if (info != null && tempFile.exists()) {
             startOffset = tempFile.length()
             totalSize = info.first
-            logD("断点续传: 已下载 ${formatSize(startOffset)} / ${formatSize(totalSize)}")
+            logger?.i(TAG, "断点续传: 已下载 ${formatSize(startOffset)} / ${formatSize(totalSize)}")
         } else {
             cleanPartialDownload(versionCode)
             tempFile.delete()
-            logD("全新下载，清理临时文件")
+            logger?.i(TAG, "全新下载，清理临时文件")
         }
 
         val dialogView = LayoutInflater.from(activity).inflate(R.layout.dialog_download_progress, null)
@@ -291,7 +291,7 @@ class UpdateManager private constructor(private val context: Context) {
         downloadPercentText = dialogView.findViewById(R.id.tvDownloadPercent)
 
         progressDialog = AlertDialog.Builder(activity).setTitle("正在下载更新").setView(dialogView).setCancelable(false).setNegativeButton("取消") { dialog, _ ->
-            logD("用户取消下载")
+            logger?.i(TAG, "用户取消下载")
             currentDownloadJob?.cancel()
             cleanPartialDownload(versionCode)
             dialog.dismiss()
@@ -309,7 +309,7 @@ class UpdateManager private constructor(private val context: Context) {
             val downloader = ApkDownloader(context)
             val result = downloader.downloadFile(downloadUrl = versionInfo.ApkUrl!!, targetFile = tempFile, startOffset = startOffset, expectedTotalSize = if (totalSize > 0) totalSize else null, onProgress = { downloaded, total, done ->
                 if (done) {
-                    logD("全量包下载完成: $downloaded / $total")
+                    logger?.i(TAG, "全量包下载完成: $downloaded / $total")
                     progressDialog?.dismiss()
                     currentListener?.onDownloadComplete()
                 } else {
@@ -322,22 +322,22 @@ class UpdateManager private constructor(private val context: Context) {
             })
 
             if (result != null) {
-                logD("全量包下载成功，开始MD5校验")
+                logger?.i(TAG, "全量包下载成功，开始MD5校验")
                 if (Md5Util.verifyMd5(result, versionInfo.Md5Hash)) {
-                    logD("MD5校验通过，重命名为正式APK")
+                    logger?.i(TAG, "MD5校验通过，重命名为正式APK")
                     val targetFile = getApkFile(versionCode)
                     if (targetFile.exists()) targetFile.delete()
                     val renamed = result.renameTo(targetFile)
                     if (renamed) {
                         cleanPartialDownload(versionCode)
-                        logD("重命名成功，准备安装")
+                        logger?.i(TAG, "重命名成功，准备安装")
                         installApkWithPermissionCheck(activity, targetFile)
                     } else {
-                        logE("文件重命名失败")
+                        logger?.e(TAG, "文件重命名失败")
                         currentListener?.onDownloadFailed("文件重命名失败")
                     }
                 } else {
-                    logE("MD5校验失败")
+                    logger?.e(TAG, "MD5校验失败")
                     progressDialog?.dismiss()
                     result.delete()
                     cleanPartialDownload(versionCode)
@@ -345,7 +345,7 @@ class UpdateManager private constructor(private val context: Context) {
                     showMd5MismatchDialog(activity)
                 }
             } else {
-                logE("全量包下载失败")
+                logger?.e(TAG, "全量包下载失败")
                 progressDialog?.dismiss()
                 if (!currentDownloadJob?.isCancelled!!) {
                     currentListener?.onDownloadFailed("下载失败，请重试")
@@ -360,15 +360,15 @@ class UpdateManager private constructor(private val context: Context) {
     private fun startDownloadPatch(activity: FragmentActivity, versionInfo: VersionInfo) {
         val versionCode = versionInfo.versionCode
         val patchUrl = versionInfo.downloadUrl
-        logD("开始增量更新，版本号=$versionCode, patchUrl=$patchUrl")
+        logger?.i(TAG, "开始增量更新，版本号=$versionCode, patchUrl=$patchUrl")
         if (patchUrl.isNullOrEmpty()) {
-            logE("差分包地址为空")
+            logger?.e(TAG, "差分包地址为空")
             currentListener?.onDownloadFailed("差分包地址为空")
             return
         }
         val targetApkFile = getApkFile(versionCode)
         if (targetApkFile.exists() && targetApkFile.length() > 0 && Md5Util.verifyMd5(targetApkFile, versionInfo.Md5Hash)) {
-            logD("目标APK已存在且MD5正确，直接安装")
+            logger?.i(TAG, "目标APK已存在且MD5正确，直接安装")
             installApkWithPermissionCheck(activity, targetApkFile)
             return
         }
@@ -376,17 +376,15 @@ class UpdateManager private constructor(private val context: Context) {
         val patchFile = getPatchFile(versionCode)
         val patchInfoFile = getPatchInfoFile(versionCode)
         val savedInfo = readDownloadInfo(versionCode, patchUrl, patchInfoFile)
-
         var startOffset = 0L
         var totalSize = -1L
-
         if (savedInfo != null && patchFile.exists() && patchFile.length() == savedInfo.second) {
             startOffset = savedInfo.second
             totalSize = savedInfo.first
-            logD("差分包断点续传: 已下载 ${formatSize(startOffset)} / ${formatSize(totalSize)}")
+            logger?.i(TAG, "差分包断点续传: 已下载 ${formatSize(startOffset)} / ${formatSize(totalSize)}")
         } else {
             cleanPatchDownload(versionCode)
-            logD("全新下载差分包，清理旧文件")
+            logger?.i(TAG, "全新下载差分包，清理旧文件")
         }
 
         val dialogView = LayoutInflater.from(activity).inflate(R.layout.dialog_download_progress, null)
@@ -394,7 +392,7 @@ class UpdateManager private constructor(private val context: Context) {
         downloadPercentText = dialogView.findViewById(R.id.tvDownloadPercent)
 
         progressDialog = AlertDialog.Builder(activity).setTitle("正在下载增量更新包").setView(dialogView).setCancelable(false).setNegativeButton("取消") { dialog, _ ->
-            logD("用户取消差分包下载")
+            logger?.i(TAG, "用户取消差分包下载")
             currentDownloadJob?.cancel()
             cleanPatchDownload(versionCode)
             dialog.dismiss()
@@ -425,7 +423,7 @@ class UpdateManager private constructor(private val context: Context) {
             })
 
             if (downloadedPatchFile == null) {
-                logE("差分包下载失败，回退全量更新")
+                logger?.e(TAG, "差分包下载失败，回退全量更新")
                 progressDialog?.dismiss()
                 cleanPatchDownload(versionCode)
                 currentListener?.onDownloadFailed("差分包下载失败，尝试完整包更新")
@@ -434,7 +432,7 @@ class UpdateManager private constructor(private val context: Context) {
             }
             val oldApkPath = getInstalledApkPath()
             if (oldApkPath == null || !File(oldApkPath).exists()) {
-                logE("无法获取当前安装包路径: $oldApkPath")
+                logger?.e(TAG, "无法获取当前安装包路径: $oldApkPath")
                 progressDialog?.dismiss()
                 cleanPatchDownload(versionCode)
                 currentListener?.onDownloadFailed("无法获取当前应用安装包，请使用完整包更新")
@@ -442,18 +440,18 @@ class UpdateManager private constructor(private val context: Context) {
                 return@launch
             }
             val newApkFile = File(targetApkFile.absolutePath)
-            logD("开始合成APK: 旧APK=$oldApkPath, 差分包=${patchFile.absolutePath}, 输出=${newApkFile.absolutePath}")
+            logger?.i(TAG, "开始合成APK: 旧APK=$oldApkPath, 差分包=${patchFile.absolutePath}, 输出=${newApkFile.absolutePath}")
             val patchResult = withContext(Dispatchers.IO) {
                 try {
                     PatchUtils.getInstance().patch(oldApkPath, newApkFile.absolutePath, patchFile.absolutePath)
                 } catch (e: Exception) {
-                    logE("合成过程异常", e)
+                    logger?.e(TAG, "合成过程异常 ${e.message}")
                     -1
                 }
             }
-            logD("合成结果: $patchResult (0表示成功)")
+            logger?.i(TAG, "合成结果: $patchResult (0表示成功)")
             if (patchResult == -1) {
-                logE("差分包合成失败")
+                logger?.e(TAG, "差分包合成失败")
                 progressDialog?.dismiss()
                 cleanPatchDownload(versionCode)
                 newApkFile.delete()
@@ -461,9 +459,9 @@ class UpdateManager private constructor(private val context: Context) {
                 startDownloadFullApk(activity, versionInfo)
                 return@launch
             }
-            logD("合成成功，校验MD5")
+            logger?.i(TAG, "合成成功，校验MD5")
             if (!Md5Util.verifyMd5(newApkFile, versionInfo.Md5Hash)) {
-                logE("合成后APK的MD5校验失败")
+                logger?.e(TAG, "合成后APK的MD5校验失败")
                 progressDialog?.dismiss()
                 cleanPatchDownload(versionCode)
                 newApkFile.delete()
@@ -473,7 +471,7 @@ class UpdateManager private constructor(private val context: Context) {
             }
             cleanPatchDownload(versionCode)
             progressDialog?.dismiss()
-            logD("差分包更新成功，准备安装APK: ${targetApkFile.absolutePath}")
+            logger?.i(TAG, "差分包更新成功，准备安装APK: ${targetApkFile.absolutePath}")
             currentListener?.onDownloadComplete()
             installApkWithPermissionCheck(activity, targetApkFile)
             currentDownloadJob = null
@@ -484,10 +482,10 @@ class UpdateManager private constructor(private val context: Context) {
         return try {
             val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
             val path = packageInfo.applicationInfo.sourceDir
-            logD("已安装APK路径: $path")
+            logger?.i(TAG, "已安装APK路径: $path")
             path
         } catch (e: Exception) {
-            logE("获取已安装APK路径失败", e)
+            logger?.e(TAG, "获取已安装APK路径失败 ${e.message}")
             null
         }
     }
@@ -522,13 +520,13 @@ class UpdateManager private constructor(private val context: Context) {
     private fun cleanPartialDownload(versionCode: Int) {
         getTempApkFile(versionCode).delete()
         getInfoFile(versionCode).delete()
-        logD("清理全量包临时文件: versionCode=$versionCode")
+        logger?.i(TAG, "清理全量包临时文件: versionCode=$versionCode")
     }
 
     private fun cleanPatchDownload(versionCode: Int) {
         getPatchFile(versionCode).delete()
         getPatchInfoFile(versionCode).delete()
-        logD("清理差分包临时文件: versionCode=$versionCode")
+        logger?.i(TAG, "清理差分包临时文件: versionCode=$versionCode")
     }
 
     private fun saveDownloadInfo(versionCode: Int, url: String, totalSize: Long, downloadedSize: Long, infoFile: File = getInfoFile(versionCode)) {
@@ -550,11 +548,11 @@ class UpdateManager private constructor(private val context: Context) {
             if (url == expectedUrl && savedVersion == versionCode && totalSize > 0 && downloadedSize >= 0 && downloadedSize <= totalSize) {
                 Pair(totalSize, downloadedSize)
             } else {
-                logD("读取下载信息失败: 不匹配 (url=$url, expectedUrl=$expectedUrl, savedVersion=$savedVersion, expectedVersion=$versionCode)")
+                logger?.i(TAG, "读取下载信息失败: 不匹配 (url=$url, expectedUrl=$expectedUrl, savedVersion=$savedVersion, expectedVersion=$versionCode)")
                 null
             }
         } catch (e: Exception) {
-            logE("解析下载信息文件异常", e)
+            logger?.e(TAG, "解析下载信息文件异常 ${e.message}")
             null
         }
     }
@@ -566,42 +564,42 @@ class UpdateManager private constructor(private val context: Context) {
             downloadUrl: String, targetFile: File, startOffset: Long, expectedTotalSize: Long?, onProgress: (downloaded: Long, total: Long, done: Boolean) -> Unit
         ): File? = suspendCancellableCoroutine { continuation ->
             targetFile.parentFile?.mkdirs()
-            logD("开始下载: url=$downloadUrl, 目标文件=${targetFile.absolutePath}, startOffset=$startOffset, expectedTotalSize=$expectedTotalSize")
+            logger?.i(TAG, "开始下载: url=$downloadUrl, 目标文件=${targetFile.absolutePath}, startOffset=$startOffset, expectedTotalSize=$expectedTotalSize")
             val requestBuilder = Request.Builder().url(downloadUrl)
             if (startOffset > 0 && expectedTotalSize != null) {
                 val rangeHeader = "bytes=$startOffset-${expectedTotalSize - 1}"
                 requestBuilder.addHeader("Range", rangeHeader)
-                logD("添加Range头: $rangeHeader")
+                logger?.i(TAG, "添加Range头: $rangeHeader")
             }
             val request = requestBuilder.build()
             val call = client.newCall(request)
             continuation.invokeOnCancellation {
-                logD("下载任务被取消")
+                logger?.i(TAG, "下载任务被取消")
                 call.cancel()
             }
             val mainHandler = Handler(Looper.getMainLooper())
             call.enqueue(object : okhttp3.Callback {
                 override fun onFailure(call: Call, e: IOException) {
-                    logE("下载请求失败", e)
+                    logger?.e(TAG, "下载请求失败 ${e.message}")
                     if (!continuation.isCancelled) {
                         continuation.resume(null)
                     }
                 }
 
                 override fun onResponse(call: Call, response: okhttp3.Response) {
-                    logD("下载响应码: ${response.code}")
+                    logger?.i(TAG, "下载响应码: ${response.code}")
                     if (!response.isSuccessful) {
                         if (startOffset > 0 && response.code == 416) {
-                            logE("Range不满足(416)，清理文件重新下载")
+                            logger?.e(TAG, "Range不满足(416)，清理文件重新下载")
                             targetFile.delete()
                         } else {
-                            logE("响应失败: ${response.code}")
+                            logger?.e(TAG, "响应失败: ${response.code}")
                         }
                         if (!continuation.isCancelled) continuation.resume(null)
                         return
                     }
                     val body = response.body ?: run {
-                        logE("响应body为空")
+                        logger?.e(TAG, "响应body为空")
                         if (!continuation.isCancelled) continuation.resume(null)
                         return
                     }
@@ -611,15 +609,15 @@ class UpdateManager private constructor(private val context: Context) {
                         val match = Regex("bytes \\d+-(\\d+)/(\\d+)").find(contentRange)
                         if (match != null) {
                             totalSize = match.groupValues[2].toLong()
-                            logD("从Content-Range解析总大小: $totalSize")
+                            logger?.i(TAG, "从Content-Range解析总大小: $totalSize")
                         }
                     }
                     if (totalSize <= 0) {
                         totalSize = body.contentLength()
-                        logD("使用Content-Length作为总大小: $totalSize")
+                        logger?.i(TAG, "使用Content-Length作为总大小: $totalSize")
                     }
                     if (totalSize <= 0 && startOffset > 0) {
-                        logE("无法获取总大小，放弃续传")
+                        logger?.e(TAG, "无法获取总大小，放弃续传")
                         targetFile.delete()
                         if (!continuation.isCancelled) continuation.resume(null)
                         return
@@ -634,7 +632,7 @@ class UpdateManager private constructor(private val context: Context) {
                         var bytesRead: Int
                         while (source.read(buffer).also { bytesRead = it } != -1) {
                             if (!continuation.isActive) {
-                                logD("协程已取消，停止写入")
+                                logger?.i(TAG, "协程已取消，停止写入")
                                 fos.close()
                                 source.close()
                                 return
@@ -648,9 +646,9 @@ class UpdateManager private constructor(private val context: Context) {
                         fos.close()
                         source.close()
                         success = true
-                        logD("下载完成，总下载字节: $totalRead")
+                        logger?.i(TAG, "下载完成，总下载字节: $totalRead")
                     } catch (e: Exception) {
-                        logE("下载写入异常", e)
+                        logger?.e(TAG, "下载写入异常 ${e.message}")
                         targetFile.delete()
                     } finally {
                         if (success && !continuation.isCancelled) {
@@ -668,26 +666,26 @@ class UpdateManager private constructor(private val context: Context) {
 
     private fun installApkWithPermissionCheck(activity: FragmentActivity, apkFile: File?) {
         if (apkFile == null || !apkFile.exists()) {
-            logE("安装失败: APK文件不存在")
+            logger?.e(TAG, "安装失败: APK文件不存在")
             currentListener?.onDownloadFailed("APK 文件不存在")
             return
         }
-        logD("开始安装APK: ${apkFile.absolutePath}, 大小=${apkFile.length()}")
+        logger?.i(TAG, "开始安装APK: ${apkFile.absolutePath}, 大小=${apkFile.length()}")
         pendingApkFile = apkFile
         val permissionHelper = InstallPermissionHelper(activity)
         permissionHelper.checkAndRequestPermission { granted ->
             if (granted) {
-                logD("安装权限已授予")
+                logger?.i(TAG, "安装权限已授予")
                 val installed = performInstallApk(activity, pendingApkFile!!)
                 if (!installed) {
-                    logE("安装启动失败")
+                    logger?.e(TAG, "安装启动失败")
                     currentListener?.onDownloadFailed("安装失败")
                 } else {
-                    logD("安装意图已发送")
+                    logger?.i(TAG, "安装意图已发送")
                     currentListener?.onInstallPermissionResult(true)
                 }
             } else {
-                logE("用户拒绝安装权限")
+                logger?.e(TAG, "用户拒绝安装权限")
                 currentListener?.onInstallPermissionResult(false)
                 currentListener?.onDownloadFailed("缺少安装未知来源应用的权限，请手动授权后重试")
             }
@@ -697,12 +695,12 @@ class UpdateManager private constructor(private val context: Context) {
 
     private fun performInstallApk(activity: FragmentActivity, apkFile: File): Boolean {
         if (!apkFile.exists()) {
-            logE("安装时APK文件不存在: ${apkFile.absolutePath}")
+            logger?.e(TAG, "安装时APK文件不存在: ${apkFile.absolutePath}")
             return false
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             if (!activity.packageManager.canRequestPackageInstalls()) {
-                logE("Android O+ 未允许安装未知来源应用")
+                logger?.e(TAG, "Android O+ 未允许安装未知来源应用")
                 return false
             }
         }
@@ -712,7 +710,7 @@ class UpdateManager private constructor(private val context: Context) {
         } else {
             Uri.fromFile(apkFile)
         }
-        logD("安装URI: $apkUri, authority=$authority")
+        logger?.i(TAG, "安装URI: $apkUri, authority=$authority")
         val intent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(apkUri, "application/vnd.android.package-archive")
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -734,7 +732,7 @@ class UpdateManager private constructor(private val context: Context) {
     }
 
     fun release() {
-        logD("释放资源，取消下载任务")
+        logger?.i(TAG, "释放资源，取消下载任务")
         currentDownloadJob?.cancel()
         updateScope?.cancel()
         progressDialog?.dismiss()

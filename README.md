@@ -30,7 +30,6 @@ dependencies {
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.5.2'
     implementation 'com.alibaba:fastjson:1.2.70'
     implementation 'androidx.appcompat:appcompat:1.3.1'
-    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.4.1'
 }
 ```
 
@@ -67,3 +66,8 @@ val updateManager = UpdateManager.init(applicationContext)
             })
 ```
 
+## 版本记录
+
+### 1.0.4
+
+- add setLogImplementation接口传入log的实现
