@@ -176,7 +176,6 @@ class UpdateManager private constructor(private val context: Context) {
                 }
                 return@launch
             }
-
             val localVersionCode = getLocalVersionCode()
             logger?.i(TAG, "本地版本号: $localVersionCode, 服务器版本号: ${updateInfo.versionCode}")
             if (updateInfo.versionCode > localVersionCode) {

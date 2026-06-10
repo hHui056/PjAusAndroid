@@ -15,22 +15,22 @@ android {
     }
     signingConfigs {
         debug {
-            storeFile file('faisv5.jks')
-            storePassword 'pj123456'
+            storeFile file('personal.jks')
+            storePassword 'pj120!@#'
             keyAlias 'android'
-            keyPassword 'pj123456'
+            keyPassword 'pj120!@#'
         }
         releaseConfig {
+            storeFile file('personal.jks')
+            storePassword 'pj120!@#'
             keyAlias 'android'
-            keyPassword 'pj123456'
-            storeFile file('faisv5.jks')
-            storePassword 'pj123456'
+            keyPassword 'pj120!@#'
         }
         debugConfig {
+            storeFile file('personal.jks')
+            storePassword 'pj120!@#'
             keyAlias 'android'
-            keyPassword 'pj123456'
-            storeFile file('faisv5.jks')
-            storePassword 'pj123456'
+            keyPassword 'pj120!@#'
         }
     }
     buildTypes {
