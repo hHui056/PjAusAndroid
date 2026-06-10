@@ -11,10 +11,28 @@ android {
         targetSdkVersion 34
         versionCode 83
         versionName "1.0"
-
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
-
+    signingConfigs {
+        debug {
+            storeFile file('faisv5.jks')
+            storePassword 'pj123456'
+            keyAlias 'android'
+            keyPassword 'pj123456'
+        }
+        releaseConfig {
+            keyAlias 'android'
+            keyPassword 'pj123456'
+            storeFile file('faisv5.jks')
+            storePassword 'pj123456'
+        }
+        debugConfig {
+            keyAlias 'android'
+            keyPassword 'pj123456'
+            storeFile file('faisv5.jks')
+            storePassword 'pj123456'
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false

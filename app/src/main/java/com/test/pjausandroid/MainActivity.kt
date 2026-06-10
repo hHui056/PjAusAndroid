@@ -1,52 +1,69 @@
 package com.test.pjausandroid
 
 import android.annotation.SuppressLint
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.widget.Button
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.pj.aus.UpdateManager
 import com.pj.aus.entity.VersionInfo
 import com.pj.aus.listener.UpdateListener
+import com.pj.aus.log.IUpdateLog
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : AppCompatActivity(), IUpdateLog {
     private val tag = this.javaClass.simpleName
 
-    @SuppressLint("MissingInflatedId")
+    @SuppressLint("MissingInflatedId", "SetTextI18n")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
-        Toast.makeText(this, "这是新的apk", Toast.LENGTH_LONG).show()
         findViewById<Button>(R.id.btn_check_update).setOnClickListener {
-            val updateManager = UpdateManager.init(applicationContext)
-            updateManager.setCheckUrl("http://192.168.0.31:8754")
-            updateManager.setPackageName("fais6_update_test")
-            updateManager.setFileProviderAuthority("${this.packageName}.fileprovider")
-            updateManager.checkUpdate(this, object : UpdateListener {
-                override fun onNewVersionFound(updateInfo: VersionInfo) {
-                    Log.d(tag, "检测到新版本 ${updateInfo}")
-                }
+            UpdateManager.init(applicationContext).apply {
+                setCheckUrl("http://192.168.0.31:8754")
+                setPackageName("fais6_update_test")
+                setLogImplementation(this@MainActivity)
+                setFileProviderAuthority("${this@MainActivity.packageName}.fileprovider")
+                checkUpdate(this@MainActivity, showLoadingDialog = true)
+            }
+        }
+        findViewById<TextView>(R.id.txt_version_code).text = "当前版本号Code=${getLocalVersionCode()}"
+    }
 
-                override fun onAlreadyLatestVersion() {
-                }
+    override fun v(tag: String, message: String) {
+        Log.v(tag, message)
+    }
 
-                override fun onCheckFailed(error: String) {
-                }
+    override fun d(tag: String, message: String) {
+        Log.d(tag, message)
+    }
 
-                override fun onDownloadProgress(percent: Int, downloaded: Long, total: Long) {
-                    Log.d("MainActivity", "文件下载中，进度: ${percent}")
-                }
+    override fun i(tag: String, message: String) {
+        Log.i(tag, message)
+    }
 
-                override fun onDownloadComplete() {
-                }
+    override fun w(tag: String, message: String) {
+        Log.w(tag, message)
+    }
 
-                override fun onDownloadFailed(error: String) {
-                }
+    override fun e(tag: String, message: String) {
+        Log.e(tag, message)
+    }
 
-                override fun onInstallPermissionResult(granted: Boolean) {
-                }
-            })
+    private fun getLocalVersionCode(): Int {
+        return try {
+            val packageInfo = this.packageManager.getPackageInfo(this.packageName, 0)
+            val version = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                packageInfo.longVersionCode.toInt()
+            } else {
+                packageInfo.versionCode
+            }
+            version
+        } catch (e: PackageManager.NameNotFoundException) {
+            1
         }
     }
 }

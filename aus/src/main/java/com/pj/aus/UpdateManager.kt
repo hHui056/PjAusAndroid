@@ -10,7 +10,6 @@ import android.os.Build
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
 import android.view.LayoutInflater
 import android.widget.ProgressBar
 import android.widget.TextView
@@ -24,6 +23,7 @@ import com.pj.aus.log.IUpdateLog
 import com.pj.aus.util.InstallPermissionHelper
 import com.pj.aus.util.Md5Util
 import com.pj.aus.util.PatchUtils
+import com.pj.aus.util.SSLSocketClient
 import kotlinx.coroutines.*
 import okhttp3.Call
 import okhttp3.OkHttpClient
@@ -52,12 +52,17 @@ class UpdateManager private constructor(private val context: Context) {
                 instance ?: UpdateManager(context.applicationContext).also { instance = it }
             }
         }
-
-        // 日志开关，可根据 BuildConfig.DEBUG 设置
-        var isDebug = true
     }
 
-    private val client = OkHttpClient.Builder().connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS).readTimeout(15, java.util.concurrent.TimeUnit.SECONDS).build()
+    private var checkUpdateLoadingDialog: AlertDialog? = null
+
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+        .sslSocketFactory(
+            SSLSocketClient.getSSLSocketFactory(), SSLSocketClient.geX509tTrustManager()
+        ).hostnameVerifier(SSLSocketClient.getHostnameVerifier())
+        .build()
     private var updateScope: CoroutineScope? = null
     private var currentListener: UpdateListener? = null
     private var fileProviderAuthority: String = ""
@@ -78,7 +83,6 @@ class UpdateManager private constructor(private val context: Context) {
      */
     fun setCheckUrl(url: String): UpdateManager {
         this.checkUrl = url
-        logger?.i(TAG, "setCheckUrl: $url")
         return this
     }
 
@@ -87,7 +91,6 @@ class UpdateManager private constructor(private val context: Context) {
      */
     fun setPackageName(name: String): UpdateManager {
         this.packageName = name
-        logger?.i(TAG, "setPackageName: $name")
         return this
     }
 
@@ -96,7 +99,6 @@ class UpdateManager private constructor(private val context: Context) {
      */
     fun setFileProviderAuthority(authority: String): UpdateManager {
         this.fileProviderAuthority = authority
-        logger?.i(TAG, "setFileProviderAuthority: $authority")
         return this
     }
 
@@ -105,7 +107,6 @@ class UpdateManager private constructor(private val context: Context) {
      */
     fun setExtParams(params: Map<String, String>): UpdateManager {
         this.extParams = params
-        logger?.i(TAG, "setExtParams: $params")
         return this
     }
 
@@ -121,8 +122,14 @@ class UpdateManager private constructor(private val context: Context) {
      * 开始检查更新
      * @param listener 回调监听
      * @param showDefaultProgressUI 是否使用库内置的下载进度对话框（默认true）
+     * @param showLoadingDialog 是否在检测更新请求网络时显示 Loading 弹窗（默认false）
      */
-    fun checkUpdate(activity: FragmentActivity, listener: UpdateListener?, showDefaultProgressUI: Boolean = true) {
+    fun checkUpdate(
+        activity: FragmentActivity,
+        listener: UpdateListener? = null,
+        showDefaultProgressUI: Boolean = true,
+        showLoadingDialog: Boolean = false
+    ) {
         this.currentListener = listener
         logger?.i(TAG, "checkUpdate called, packageName=$packageName, checkUrl=$checkUrl")
         if (this.packageName.isEmpty()) {
@@ -136,8 +143,20 @@ class UpdateManager private constructor(private val context: Context) {
             return
         }
         if (updateScope == null) updateScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+        // 如果开启了显示 Loading，并在主线程初始化并显示
+        if (showLoadingDialog) {
+            checkUpdateLoadingDialog = AlertDialog.Builder(activity)
+                .setMessage("正在检查更新...")
+                .setCancelable(false)
+                .create()
+            checkUpdateLoadingDialog?.show()
+        }
+
         updateScope?.launch {
             val updateInfo = fetchUpdateInfo(extParams)
+            // 网络请求结束，无论成功或失败，第一时间关闭 Loading
+            checkUpdateLoadingDialog?.dismiss()
+            checkUpdateLoadingDialog = null
             if (updateInfo == null) {
                 logger?.e(TAG, "获取更新信息失败")
                 listener?.onCheckFailed("获取更新信息失败，请检查网络或服务器返回格式")
@@ -204,6 +223,7 @@ class UpdateManager private constructor(private val context: Context) {
             }
         }
     }
+
 
     private suspend fun fetchUpdateInfo(extParams: Map<String, String>? = null): VersionInfo? = withContext(Dispatchers.IO) {
         var realRequestUrl = "${checkUrl}/aus/check/${packageName}/${getLocalVersionCode()}"
