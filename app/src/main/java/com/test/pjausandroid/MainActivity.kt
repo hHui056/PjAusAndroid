@@ -27,7 +27,8 @@ class MainActivity : AppCompatActivity(), IUpdateLog {
                 setPackageName("fais6_update_test")
                 setLogImplementation(this@MainActivity)
                 setFileProviderAuthority("${this@MainActivity.packageName}.fileprovider")
-                checkUpdate(this@MainActivity, showLoadingDialog = true)
+                //checkUpdate(this@MainActivity, showLoadingDialog = true)
+                downLoadLatestApk(this@MainActivity)
             }
         }
         findViewById<TextView>(R.id.txt_version_code).text = "当前版本号Code=${getLocalVersionCode()}"

@@ -56,13 +56,9 @@ class UpdateManager private constructor(private val context: Context) {
 
     private var checkUpdateLoadingDialog: AlertDialog? = null
 
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-        .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-        .sslSocketFactory(
-            SSLSocketClient.getSSLSocketFactory(), SSLSocketClient.geX509tTrustManager()
-        ).hostnameVerifier(SSLSocketClient.getHostnameVerifier())
-        .build()
+    private val client = OkHttpClient.Builder().connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS).readTimeout(15, java.util.concurrent.TimeUnit.SECONDS).sslSocketFactory(
+        SSLSocketClient.getSSLSocketFactory(), SSLSocketClient.geX509tTrustManager()
+    ).hostnameVerifier(SSLSocketClient.getHostnameVerifier()).build()
     private var updateScope: CoroutineScope? = null
     private var currentListener: UpdateListener? = null
     private var fileProviderAuthority: String = ""
@@ -119,16 +115,36 @@ class UpdateManager private constructor(private val context: Context) {
     }
 
     /**
+     * 直接下载并安装最新的 APK（跳过版本检测与接口校验）
+     * @param activity 当前页面的 FragmentActivity
+     */
+    fun downLoadLatestApk(activity: FragmentActivity) {
+        val realRequestUrl = "${checkUrl}/aus/download/${packageName}/version/latest"
+        logger?.i(TAG, "直接全量下载最新APK, url=$realRequestUrl")
+        if (this.packageName.isEmpty() || checkUrl.isEmpty()) {
+            logger?.e(TAG, "包名或下载地址未配置")
+            currentListener?.onDownloadFailed("配置不完整，请检查 packageName 和 checkUrl")
+            return
+        }
+        // 构造一个临时的 VersionInfo，用来复用你现有的下载器逻辑
+        val directVersionInfo = VersionInfo().apply {
+            this.versionCode = 999999 // 设定一个固定的虚拟版本号，用于创建对应的临时文件
+            this.ApkUrl = realRequestUrl
+            this.Md5Hash = "" // 留空，代表不进行 MD5 强校验
+        }
+        if (updateScope == null) updateScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+        // 调用你现有的全量下载逻辑
+        startDownloadFullApk(activity, directVersionInfo, true)
+    }
+
+    /**
      * 开始检查更新
      * @param listener 回调监听
      * @param showDefaultProgressUI 是否使用库内置的下载进度对话框（默认true）
      * @param showLoadingDialog 是否在检测更新请求网络时显示 Loading 弹窗（默认false）
      */
     fun checkUpdate(
-        activity: FragmentActivity,
-        listener: UpdateListener? = null,
-        showDefaultProgressUI: Boolean = true,
-        showLoadingDialog: Boolean = false
+        activity: FragmentActivity, listener: UpdateListener? = null, showDefaultProgressUI: Boolean = true, showLoadingDialog: Boolean = false
     ) {
         this.currentListener = listener
         logger?.i(TAG, "checkUpdate called, packageName=$packageName, checkUrl=$checkUrl")
@@ -145,10 +161,7 @@ class UpdateManager private constructor(private val context: Context) {
         if (updateScope == null) updateScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
         // 如果开启了显示 Loading，并在主线程初始化并显示
         if (showLoadingDialog) {
-            checkUpdateLoadingDialog = AlertDialog.Builder(activity)
-                .setMessage("正在检查更新...")
-                .setCancelable(false)
-                .create()
+            checkUpdateLoadingDialog = AlertDialog.Builder(activity).setMessage("正在检查更新...").setCancelable(false).create()
             checkUpdateLoadingDialog?.show()
         }
 
@@ -272,15 +285,33 @@ class UpdateManager private constructor(private val context: Context) {
     }
 
     // ======================= 完整 APK 下载 =======================
-
-    private fun startDownloadFullApk(activity: FragmentActivity, versionInfo: VersionInfo) {
+    /**
+     * 开始全量下载
+     * @param forceDownload 是否强制下载，为 true 时若存在历史成片 APK 则先删除
+     */
+    private fun startDownloadFullApk(activity: FragmentActivity, versionInfo: VersionInfo, forceDownload: Boolean = false) {
         val versionCode = versionInfo.versionCode
         logger?.i(TAG, "开始全量下载, 版本号=$versionCode, url=${versionInfo.ApkUrl}")
+        // 【修改逻辑】如果是强制下载，遍历并删除目录下所有后缀为 .apk 的文件
+        if (forceDownload) {
+            try {
+                val downloadDir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+                if (downloadDir != null && downloadDir.exists() && downloadDir.isDirectory) {
+                    val apkFiles = downloadDir.listFiles { file -> file.isFile && file.name.endsWith(".apk", ignoreCase = true) }
+                    apkFiles?.forEach { file ->
+                        val deleted = file.delete()
+                        logger?.i(TAG, "forceDownload 为 true，删除历史 APK 文件: ${file.name}, 结果: $deleted")
+                    }
+                }
+            } catch (e: Exception) {
+                logger?.e(TAG, "forceDownload 清理历史 APK 文件异常: ${e.message}")
+            }
+        }
         val apkFile = getApkFile(versionCode)
         if (apkFile.exists() && apkFile.length() > 0) {
             logger?.i(TAG, "APK文件已存在，验证MD5: ${apkFile.absolutePath}")
-            if (Md5Util.verifyMd5(apkFile, versionInfo.Md5Hash)) {
-                logger?.i(TAG, "MD5校验通过，直接安装")
+            if (versionInfo.Md5Hash.isNullOrEmpty() || Md5Util.verifyMd5(apkFile, versionInfo.Md5Hash)) {
+                logger?.i(TAG, "MD5为空或校验通过，直接安装")
                 installApkWithPermissionCheck(activity, apkFile)
                 return
             } else {
@@ -288,13 +319,10 @@ class UpdateManager private constructor(private val context: Context) {
                 apkFile.delete()
             }
         }
-
         val tempFile = getTempApkFile(versionCode)
         val info = readDownloadInfo(versionCode, versionInfo.ApkUrl!!)
-
         var startOffset = 0L
         var totalSize = -1L
-
         if (info != null && tempFile.exists()) {
             startOffset = tempFile.length()
             totalSize = info.first
@@ -304,7 +332,6 @@ class UpdateManager private constructor(private val context: Context) {
             tempFile.delete()
             logger?.i(TAG, "全新下载，清理临时文件")
         }
-
         val dialogView = LayoutInflater.from(activity).inflate(R.layout.dialog_download_progress, null)
         downloadProgressBar = dialogView.findViewById(R.id.downloadProgressBar)
         downloadPercentText = dialogView.findViewById(R.id.tvDownloadPercent)
@@ -323,7 +350,6 @@ class UpdateManager private constructor(private val context: Context) {
             downloadPercentText?.text = "$percent% (${formatSize(startOffset)}/${formatSize(totalSize)})"
             currentListener?.onDownloadProgress(percent, startOffset, totalSize)
         }
-
         currentDownloadJob = updateScope?.launch {
             val downloader = ApkDownloader(context)
             val result = downloader.downloadFile(downloadUrl = versionInfo.ApkUrl!!, targetFile = tempFile, startOffset = startOffset, expectedTotalSize = if (totalSize > 0) totalSize else null, onProgress = { downloaded, total, done ->
@@ -340,13 +366,17 @@ class UpdateManager private constructor(private val context: Context) {
                 }
             })
 
-            if (result != null) {
+            if (result.file != null) {
                 logger?.i(TAG, "全量包下载成功，开始MD5校验")
-                if (Md5Util.verifyMd5(result, versionInfo.Md5Hash)) {
-                    logger?.i(TAG, "MD5校验通过，重命名为正式APK")
-                    val targetFile = getApkFile(versionCode)
+                if (versionInfo.Md5Hash.isNullOrEmpty() || Md5Util.verifyMd5(result.file, versionInfo.Md5Hash)) {
+                    logger?.i(TAG, "MD5为空或校验通过，重命名为正式APK")
+                    val targetFile = if (result.targetName != null) {
+                        getFile(result.targetName)
+                    } else {
+                        getApkFile(versionCode)
+                    }
                     if (targetFile.exists()) targetFile.delete()
-                    val renamed = result.renameTo(targetFile)
+                    val renamed = result.file.renameTo(targetFile)
                     if (renamed) {
                         cleanPartialDownload(versionCode)
                         logger?.i(TAG, "重命名成功，准备安装")
@@ -358,7 +388,7 @@ class UpdateManager private constructor(private val context: Context) {
                 } else {
                     logger?.e(TAG, "MD5校验失败")
                     progressDialog?.dismiss()
-                    result.delete()
+                    result.file.delete()
                     cleanPartialDownload(versionCode)
                     currentListener?.onDownloadFailed("文件校验失败，安装包已损坏")
                     showMd5MismatchDialog(activity)
@@ -391,7 +421,6 @@ class UpdateManager private constructor(private val context: Context) {
             installApkWithPermissionCheck(activity, targetApkFile)
             return
         }
-
         val patchFile = getPatchFile(versionCode)
         val patchInfoFile = getPatchInfoFile(versionCode)
         val savedInfo = readDownloadInfo(versionCode, patchUrl, patchInfoFile)
@@ -417,14 +446,12 @@ class UpdateManager private constructor(private val context: Context) {
             dialog.dismiss()
             currentListener?.onDownloadFailed("用户取消下载")
         }.show()
-
         if (startOffset > 0 && totalSize > 0) {
             val percent = (startOffset * 100 / totalSize).toInt()
             downloadProgressBar?.progress = percent
             downloadPercentText?.text = "$percent% (${formatSize(startOffset)}/${formatSize(totalSize)})"
             currentListener?.onDownloadProgress(percent, startOffset, totalSize)
         }
-
         currentDownloadJob = updateScope?.launch {
             val downloader = ApkDownloader(context)
             val downloadedPatchFile = downloader.downloadFile(downloadUrl = patchUrl, targetFile = patchFile, startOffset = startOffset, expectedTotalSize = if (totalSize > 0) totalSize else null, onProgress = { downloaded, total, done ->
@@ -441,7 +468,7 @@ class UpdateManager private constructor(private val context: Context) {
                 }
             })
 
-            if (downloadedPatchFile == null) {
+            if (downloadedPatchFile.file == null) {
                 logger?.e(TAG, "差分包下载失败，回退全量更新")
                 progressDialog?.dismiss()
                 cleanPatchDownload(versionCode)
@@ -459,10 +486,10 @@ class UpdateManager private constructor(private val context: Context) {
                 return@launch
             }
             val newApkFile = File(targetApkFile.absolutePath)
-            logger?.i(TAG, "开始合成APK: 旧APK=$oldApkPath, 差分包=${patchFile.absolutePath}, 输出=${newApkFile.absolutePath}")
+            logger?.i(TAG, "开始合成APK: 旧APK=$oldApkPath, 差分包=${downloadedPatchFile.file.absolutePath}, 输出=${newApkFile.absolutePath}")
             val patchResult = withContext(Dispatchers.IO) {
                 try {
-                    PatchUtils.getInstance().patch(oldApkPath, newApkFile.absolutePath, patchFile.absolutePath)
+                    PatchUtils.getInstance().patch(oldApkPath, newApkFile.absolutePath, downloadedPatchFile.file.absolutePath)
                 } catch (e: Exception) {
                     logger?.e(TAG, "合成过程异常 ${e.message}")
                     -1
@@ -513,6 +540,10 @@ class UpdateManager private constructor(private val context: Context) {
 
     private fun getApkFile(versionCode: Int): File {
         val fileName = "$packageName.$versionCode.apk"
+        return File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), fileName)
+    }
+
+    private fun getFile(fileName: String): File {
         return File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), fileName)
     }
 
@@ -577,11 +608,10 @@ class UpdateManager private constructor(private val context: Context) {
     }
 
     // ======================= 通用下载器 =======================
-
     private inner class ApkDownloader(private val context: Context) {
         suspend fun downloadFile(
             downloadUrl: String, targetFile: File, startOffset: Long, expectedTotalSize: Long?, onProgress: (downloaded: Long, total: Long, done: Boolean) -> Unit
-        ): File? = suspendCancellableCoroutine { continuation ->
+        ): DownloadResult = suspendCancellableCoroutine { continuation ->
             targetFile.parentFile?.mkdirs()
             logger?.i(TAG, "开始下载: url=$downloadUrl, 目标文件=${targetFile.absolutePath}, startOffset=$startOffset, expectedTotalSize=$expectedTotalSize")
             val requestBuilder = Request.Builder().url(downloadUrl)
@@ -601,7 +631,7 @@ class UpdateManager private constructor(private val context: Context) {
                 override fun onFailure(call: Call, e: IOException) {
                     logger?.e(TAG, "下载请求失败 ${e.message}")
                     if (!continuation.isCancelled) {
-                        continuation.resume(null)
+                        continuation.resume(DownloadResult(null, null))
                     }
                 }
 
@@ -614,16 +644,23 @@ class UpdateManager private constructor(private val context: Context) {
                         } else {
                             logger?.e(TAG, "响应失败: ${response.code}")
                         }
-                        if (!continuation.isCancelled) continuation.resume(null)
+                        if (!continuation.isCancelled) continuation.resume(DownloadResult(null, null))
                         return
                     }
                     val body = response.body ?: run {
                         logger?.e(TAG, "响应body为空")
-                        if (!continuation.isCancelled) continuation.resume(null)
+                        if (!continuation.isCancelled) continuation.resume(DownloadResult(null, null))
                         return
                     }
                     var totalSize = expectedTotalSize ?: -1L
                     val contentRange = response.header("Content-Range")
+                    val contentDisposition = response.header("content-disposition")
+                    var remoteFileName: String? = null
+                    if (contentDisposition != null) {
+                        val regex = "filename=(.+)".toRegex()
+                        val matchResult = regex.find(contentDisposition)
+                        remoteFileName = matchResult?.groups?.get(1)?.value //远端文件名称
+                    }
                     if (contentRange != null) {
                         val match = Regex("bytes \\d+-(\\d+)/(\\d+)").find(contentRange)
                         if (match != null) {
@@ -638,7 +675,7 @@ class UpdateManager private constructor(private val context: Context) {
                     if (totalSize <= 0 && startOffset > 0) {
                         logger?.e(TAG, "无法获取总大小，放弃续传")
                         targetFile.delete()
-                        if (!continuation.isCancelled) continuation.resume(null)
+                        if (!continuation.isCancelled) continuation.resume(DownloadResult(null, null))
                         return
                     }
 
@@ -671,17 +708,15 @@ class UpdateManager private constructor(private val context: Context) {
                         targetFile.delete()
                     } finally {
                         if (success && !continuation.isCancelled) {
-                            continuation.resume(targetFile)
+                            continuation.resume(DownloadResult(remoteFileName, targetFile))
                         } else if (!continuation.isCancelled) {
-                            continuation.resume(null)
+                            continuation.resume(DownloadResult(null, null))
                         }
                     }
                 }
             })
         }
     }
-
-    // ======================= 安装与辅助 =======================
 
     private fun installApkWithPermissionCheck(activity: FragmentActivity, apkFile: File?) {
         if (apkFile == null || !apkFile.exists()) {
@@ -758,4 +793,9 @@ class UpdateManager private constructor(private val context: Context) {
         currentListener = null
         updateScope = null
     }
+
+    data class DownloadResult(
+        val targetName: String?,
+        val file: File?
+    )
 }
